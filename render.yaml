@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: safe-case-archive-2026
+    runtime: python
+    buildCommand: ""
+    startCommand: "python main.py"
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: RATE_LIMIT_KBPS
+        value: 200
