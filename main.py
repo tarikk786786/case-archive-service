@@ -22,7 +22,7 @@ from evidence_manifest import export_manifest_csv, export_manifest_json, get_man
 TOTAL_ARCHIVE_SIZE = 11_000_000_000  # Exactly 11.00 GB
 DEFAULT_RATE_LIMIT_KBPS = int(os.environ.get("RATE_LIMIT_KBPS", "200"))  # 200 KB/s (~0.2 MB/s)
 INTERNAL_FILENAME = "case_investigation_data.bin"
-ARCHIVE_DOWNLOAD_NAME = "Case_2026_Forensic_Archive.zip"
+ARCHIVE_DOWNLOAD_NAME = "Report_Till_Now.zip"
 
 RANGE_HEADER_REGEX = re.compile(r"^bytes=(\d*)-(\d*)$")
 
@@ -233,7 +233,11 @@ class RenderArchiveHandler(BaseHTTPRequestHandler):
         elif path_only == "/api/export/csv":
             self._serve_export_csv()
             return
-        elif path_only.endswith(".zip") or "/download" in path_only:
+        elif (
+            path_only.endswith(".zip")
+            or "/download" in path_only
+            or "report" in path_only.lower()
+        ):
             self._serve_download(send_body=True)
             return
         else:
@@ -297,6 +301,17 @@ class RenderArchiveHandler(BaseHTTPRequestHandler):
         self.wfile.write(b)
 
     def _serve_download(self, send_body: bool = True):
+        path_only = self.path.split("?")[0]
+        base = os.path.basename(path_only)
+        if base.lower() in ("report_till_now", "report-till-now", "report_till_now.zip", "report till now"):
+            filename = "Report_Till_Now.zip"
+        elif base.endswith(".zip"):
+            filename = base
+        elif "report" in path_only.lower():
+            filename = "Report_Till_Now.zip"
+        else:
+            filename = ARCHIVE_DOWNLOAD_NAME
+
         range_h = self.headers.get("Range")
         start = 0
         end = TOTAL_ARCHIVE_SIZE - 1
@@ -316,7 +331,7 @@ class RenderArchiveHandler(BaseHTTPRequestHandler):
 
         self.send_response(status)
         self.send_header("Content-Type", "application/zip")
-        self.send_header("Content-Disposition", f'attachment; filename="{ARCHIVE_DOWNLOAD_NAME}"')
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(content_len))
         if status == HTTPStatus.PARTIAL_CONTENT:
