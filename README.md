@@ -1,5 +1,7 @@
 # Free 24/7 Cloud Streaming Archive Server (Render.com)
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/tarikk786786/case-archive-service)
+
 This lightweight service streams the **11.00 GB `Case_2026_Forensic_Archive.zip`** dynamically in real time without storing an 11 GB file on disk. It runs **24/7 in the cloud for free**, allowing anyone to download it at an enforced slow speed even when your computer is completely turned off.
 
 ---
