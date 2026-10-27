@@ -15,6 +15,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from typing import Optional, Tuple
 
+from dashboard_template import render_dashboard_html
+from evidence_manifest import export_manifest_csv, export_manifest_json, get_manifest_catalog
+
 
 TOTAL_ARCHIVE_SIZE = 11_000_000_000  # Exactly 11.00 GB
 DEFAULT_RATE_LIMIT_KBPS = int(os.environ.get("RATE_LIMIT_KBPS", "200"))  # 200 KB/s (~0.2 MB/s)
@@ -214,79 +217,65 @@ class RenderArchiveHandler(BaseHTTPRequestHandler):
         self._serve_download(send_body=False)
 
     def do_GET(self):
-        if self.path in ("/", "/index.html"):
+        path_only = self.path.split("?")[0]
+        if path_only in ("/", "/index.html"):
             self._serve_landing()
             return
-        elif self.path == "/status":
+        elif path_only in ("/status", "/api/status"):
             self._serve_status()
             return
-        elif self.path.endswith(".zip") or "/download" in self.path:
+        elif path_only == "/api/manifest":
+            self._serve_manifest()
+            return
+        elif path_only == "/api/export/json":
+            self._serve_export_json()
+            return
+        elif path_only == "/api/export/csv":
+            self._serve_export_csv()
+            return
+        elif path_only.endswith(".zip") or "/download" in path_only:
             self._serve_download(send_body=True)
             return
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
 
     def _serve_landing(self):
-        rate = DEFAULT_RATE_LIMIT_KBPS
-        html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Case Archive Download Portal</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #0f172a; color: #f8fafc;
-            display: flex; justify-content: center; align-items: center;
-            min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box;
-        }}
-        .card {{
-            background: #1e293b; border: 1px solid #334155; border-radius: 16px;
-            padding: 36px; max-width: 520px; width: 100%; text-align: center;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-        }}
-        .badge {{
-            display: inline-block; background: #0ea5e9; color: #000;
-            font-size: 12px; font-weight: 700; text-transform: uppercase;
-            padding: 4px 12px; border-radius: 9999px; margin-bottom: 16px;
-        }}
-        h1 {{ font-size: 22px; margin: 0 0 12px; color: #fff; }}
-        p {{ color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 0 0 24px; }}
-        .meta-box {{
-            background: #0f172a; border-radius: 8px; padding: 16px;
-            text-align: left; font-size: 13px; color: #cbd5e1; margin-bottom: 24px;
-        }}
-        .meta-row {{ display: flex; justify-content: space-between; margin-bottom: 8px; }}
-        .meta-row:last-child {{ margin-bottom: 0; }}
-        .btn {{
-            display: block; background: #2563eb; color: #fff; text-decoration: none;
-            font-weight: 600; padding: 14px 24px; border-radius: 8px;
-            font-size: 15px; transition: background 0.2s;
-        }}
-        .btn:hover {{ background: #1d4ed8; }}
-        .footer {{ font-size: 11px; color: #64748b; margin-top: 20px; }}
-    </style>
-</head>
-<body>
-    <div class="card">
-        <div class="badge">Forensic Case File Transfer</div>
-        <h1>{ARCHIVE_DOWNLOAD_NAME}</h1>
-        <p>This 11 GB archive is ready for secure transfer. Bandwidth throttling is active to maintain network transfer stability.</p>
-        <div class="meta-box">
-            <div class="meta-row"><span>Target Size:</span><strong>11.00 GB (11,000,000,000 bytes)</strong></div>
-            <div class="meta-row"><span>Archive Format:</span><strong>ZIP64 (STORED)</strong></div>
-            <div class="meta-row"><span>Resumption:</span><strong>RFC 7233 (Range Supported)</strong></div>
-            <div class="meta-row"><span>Bandwidth Ceiling:</span><strong>{rate} KB/s (~{rate/1024:.2f} MB/s)</strong></div>
-        </div>
-        <a href="/{ARCHIVE_DOWNLOAD_NAME}" class="btn">Download Archive (11 GB)</a>
-        <div class="footer">Encrypted Cloud Streaming Engine &bull; Auto-Resumable</div>
-    </div>
-</body>
-</html>"""
+        html = render_dashboard_html(
+            archive_name=ARCHIVE_DOWNLOAD_NAME,
+            target_size_bytes=TOTAL_ARCHIVE_SIZE,
+            rate_limit_kbps=DEFAULT_RATE_LIMIT_KBPS,
+            is_cloud=True
+        )
         b = html.encode("utf-8")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+    def _serve_manifest(self):
+        items = get_manifest_catalog()
+        b = json.dumps({"status": "success", "count": len(items), "data": items}, indent=2).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+    def _serve_export_json(self):
+        b = export_manifest_json().encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Disposition", 'attachment; filename="evidence_manifest.json"')
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+    def _serve_export_csv(self):
+        b = export_manifest_csv().encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/csv")
+        self.send_header("Content-Disposition", 'attachment; filename="evidence_manifest.csv"')
         self.send_header("Content-Length", str(len(b)))
         self.end_headers()
         self.wfile.write(b)
